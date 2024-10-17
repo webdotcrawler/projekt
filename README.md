@@ -1,6 +1,3 @@
-# Let's define the refactored README text and save it to a README.md file that the user can copy-paste.
-
-readme_content = """
 # Universal Web Scraper with Dynamic Data Structuring
 
 ## Overview
