@@ -40,4 +40,5 @@ venv.bak/
 .DS_Store
 Thumbs.db
 
-streamlit.py
+# Ignore files
+streamlit.py/
