@@ -13,8 +13,9 @@ This project is a universal web scraping tool designed to extract and structure 
 
 
 
-Requirements
-Python Dependencies
+### Requirements
+
+### Python Dependencies
 
 pip install -r requirements.txt
 
