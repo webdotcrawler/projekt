@@ -4,7 +4,7 @@ import json
 import subprocess
 from datetime import datetime
 from bs4 import BeautifulSoup
-from scraper import fetch_html_selenium, html_to_markdown_with_readability, scrape_url
+from web_scraper import fetch_html_selenium, html_to_markdown, scrape_url
 from data_source import URLS
 from urllib.parse import urlparse, urljoin
 
@@ -52,7 +52,7 @@ def scrape_multiple_urls(urls, fields, selected_model):
             
             raw_html = fetch_html_selenium(current_url)
             soup = BeautifulSoup(raw_html, "html.parser")
-            markdown = html_to_markdown_with_readability(raw_html)
+            markdown = html_to_markdown(raw_html)
             
             if first_url_markdown is None:
                 first_url_markdown = markdown
@@ -91,7 +91,7 @@ if __name__ == "__main__":
 
     try:
         # Use subprocess to trigger the combination of XLSX files
-        combine_command = f"python combine_xlsx_files.py {output_folder}"
+        combine_command = f"python merged_scraped_data.py {output_folder}"
         subprocess.check_call(combine_command, shell=True)
         print("Combining XLSX files completed successfully.")
     except subprocess.CalledProcessError as e:

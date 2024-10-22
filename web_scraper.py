@@ -19,54 +19,59 @@ from selenium.webdriver.support import expected_conditions as EC
 from groq import Groq
 from typing import List, Type
 from data_source import URLS
-from assets import USER_AGENTS,PRICING,HEADLESS_OPTIONS,SYSTEM_MESSAGE,USER_MESSAGE,LLAMA_MODEL_FULLNAME,GROQ_LLAMA_MODEL_FULLNAME
+from utils import USER_AGENTS,MODEL_PRICING,CHROME_HEADLESS_OPTIONS,AI_EXTRACTION_USER_PROMPT,LLAMA_FULL_MODEL_NAME,GROQ_LLAMA_FULL_MODEL_NAME, EXTRACTION_SYSTEM_MESSAGE
 
 
 load_dotenv()
 
 # Set up the Chrome WebDriver options
 
-def setup_selenium():
+def initialize_selenium():
+    """
+    Sets up and initializes the Selenium Chrome WebDriver.
+    Adds randomized user agents and headless browser options for scraping.
+    """
     options = Options()
 
     # Randomly select a user agent from the imported list
     user_agent = random.choice(USER_AGENTS)
     options.add_argument(f"user-agent={user_agent}")
 
-    # Add other options
-    for option in HEADLESS_OPTIONS:
+    # Apply headless or other options as needed
+    for option in CHROME_HEADLESS_OPTIONS:
         options.add_argument(option)
 
-    # Specify the path to the ChromeDriver
+    # Specify the location of the ChromeDriver executable
     service = Service("./chromedriver")  
 
-    # Initialize the WebDriver
+    # Return the configured WebDriver instance
     driver = webdriver.Chrome(service=service, options=options)
     return driver
 
-def click_accept_cookies(driver):
+def click_cookies_accept(driver):
     """
-    Tries to find and click on a cookie consent button. It looks for several common patterns.
+    Searches for common cookie consent popups on a webpage and clicks 'Accept'.
+    The function checks for a variety of text variations in multiple element types (button, a, div).
     """
     try:
-        # Wait for cookie popup to load
+        # Wait for any potential cookie popup to appear
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.XPATH, "//button | //a | //div"))
         )
         
-        # Common text variations for cookie buttons
+         # List of common accept/agree texts across websites
         accept_text_variations = [
             "accept", "agree", "allow", "consent", "continue", "ok", "I agree", "got it"
         ]
         
-        # Iterate through different element types and common text variations
+        # Check several HTML tags for these text variations
         for tag in ["button", "a", "div"]:
             for text in accept_text_variations:
                 try:
-                    # Create an XPath to find the button by text
+                    # Create an XPath expression to locate elements that match these patterns
                     element = driver.find_element(By.XPATH, f"//{tag}[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{text}')]")
                     if element:
-                        element.click()
+                        element.click() # Click the button if found
                         print(f"Clicked the '{text}' button.")
                         return
                 except:
@@ -77,20 +82,22 @@ def click_accept_cookies(driver):
     except Exception as e:
         print(f"Error finding 'Accept Cookies' button: {e}")
 
+# Click the cookie consent button if it appears
 def fetch_html_selenium(url):
-    driver = setup_selenium()
+    driver = initialize_selenium()
     try:
+        # Load the webpage
         driver.get(url)
         
-        # Add random delays to mimic human behavior
-        time.sleep(1)  # Adjust this to simulate time for user to read or interact
+        # Simulate human interaction by waiting and scrolling
+        time.sleep(1)  # Mimic time spent by a user on the web page 
         driver.maximize_window()
         
 
-        # Try to find and click the 'Accept Cookies' button
-        click_accept_cookies(driver)
+        # Handle cookie consent popup
+        click_cookies_accept(driver)
 
-        # Add more realistic actions like scrolling
+        # Scroll to different sections of the page to mimic a real user's interaction
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
         time.sleep(random.uniform(1.1, 1.8))  # Simulate time taken to scroll and read
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight/1.2);")
@@ -98,29 +105,41 @@ def fetch_html_selenium(url):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight/1);")
         time.sleep(random.uniform(1.1, 2.1))
         time.sleep(3)
+
+        # Get the full page's HTML source
         html = driver.page_source
         return html
     finally:
-        driver.quit()
+        driver.quit() # Close the WebDriver after completion
+
+
 
 def clean_html(html_content):
+    """
+    Cleans the raw HTML content by removing unwanted tags like headers and footers.
+    Uses BeautifulSoup to parse and modify the HTML structure.
+    """
     soup = BeautifulSoup(html_content, 'html.parser')
     
-    # Remove headers and footers based on common HTML tags or classes
+    # Remove unwanted header and footer sections
     for element in soup.find_all(['header', 'footer']):
-        element.decompose()  # Remove these tags and their content
+        element.decompose()  # Remove the tag and its content
 
     return str(soup)
 
 
-def html_to_markdown_with_readability(html_content):
+def html_to_markdown(html_content):
+    """
+    Converts cleaned HTML content into Markdown format using the html2text library.
+    This simplifies the structure of the webpage for further text processing.
+    """
 
-    
+    # Clean HTML before conversion
     cleaned_html = clean_html(html_content)  
     
-    # Convert to markdown
+    # Initialize the markdown converter and convert the HTML
     markdown_converter = html2text.HTML2Text()
-    markdown_converter.ignore_links = False
+    markdown_converter.ignore_links = False # Preserve links in the markdown
     markdown_content = markdown_converter.handle(cleaned_html)
     
     return markdown_content
@@ -128,7 +147,10 @@ def html_to_markdown_with_readability(html_content):
 
     
 def save_raw_data(raw_data: str, output_folder: str, file_name: str):
-    """Save raw markdown data to the specified output folder."""
+    """
+    Saves raw markdown data to a file in the specified output directory.
+    Ensures that the directory exists before saving.
+    """
     os.makedirs(output_folder, exist_ok=True)
     raw_output_path = os.path.join(output_folder, file_name)
     with open(raw_output_path, 'w', encoding='utf-8') as f:
@@ -136,12 +158,12 @@ def save_raw_data(raw_data: str, output_folder: str, file_name: str):
     print(f"Raw data saved to {raw_output_path}")
     return raw_output_path
 
-
-def remove_urls_from_file(file_path):
+# Remove URLs from a given markdown file using a regex pattern
+def remove_urls(file_path):
     # Regex pattern to find URLs
     url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
 
-    # Construct the new file name
+    # Create a new filename for the cleaned content
     base, ext = os.path.splitext(file_path)
     new_file_path = f"{base}_cleaned{ext}"
 
@@ -149,37 +171,42 @@ def remove_urls_from_file(file_path):
     with open(file_path, 'r', encoding='utf-8') as file:
         markdown_content = file.read()
 
-    # Replace all found URLs with an empty string
+    # Replace URLs with an empty string
     cleaned_content = re.sub(url_pattern, '', markdown_content)
 
-    # Write the cleaned content to a new file
+    # Write the cleaned content back to a new file
     with open(new_file_path, 'w', encoding='utf-8') as file:
         file.write(cleaned_content)
     print(f"Cleaned file saved as: {new_file_path}")
     return cleaned_content
 
-
-def create_dynamic_listing_model(field_names: List[str]) -> Type[BaseModel]:
+# Dynamically create a Pydantic model for listing fields
+def dynamic_listing_model(field_names: List[str]) -> Type[BaseModel]:
     """
-    Dynamically creates a Pydantic model based on provided fields.
-    field_name is a list of names of the fields to extract from the markdown.
+    Dynamically generates a Pydantic model based on a list of field names.
+    This model will represent a structured listing extracted from the markdown content.
     """
-    # Create field definitions using aliases for Field parameters
+    # Create a dictionary of field definitions for each field name
     field_definitions = {field: (str, ...) for field in field_names}
-    # Dynamically create the model with all field
+    # Return the dynamically created model
     return create_model('DynamicListingModel', **field_definitions)
 
-
-def create_listings_container_model(listing_model: Type[BaseModel]) -> Type[BaseModel]:
+# Create a container model that holds a list of listings (Pydantic models)
+def listings_container_model(listing_model: Type[BaseModel]) -> Type[BaseModel]:
     """
-    Create a container model that holds a list of the given listing model.
+    Generates a Pydantic container model that holds a list of listing models.
+    The container model can be used to organize multiple listings together.
     """
     return create_model('DynamicListingsContainer', listings=(List[listing_model], ...))
 
 
 
-
-def trim_to_token_limit(text, model, max_tokens=120000):
+# Ensure text does not exceed the token limit for the chosen model
+def token_limit(text, model, max_tokens=120000):
+    """
+    Trims the input text if it exceeds the specified token limit for the LLM model.
+    This function encodes the text, counts tokens, and decodes a truncated version if necessary.
+    """
     encoder = tiktoken.encoding_for_model(model)
     tokens = encoder.encode(text)
     if len(tokens) > max_tokens:
@@ -187,14 +214,15 @@ def trim_to_token_limit(text, model, max_tokens=120000):
         return trimmed_text
     return text
 
-def generate_system_message(listing_model: BaseModel) -> str:
+def system_message(listing_model: BaseModel) -> str:
     """
-    Dynamically generate a system message based on the fields in the provided listing model.
+    Dynamically creates a system message for the LLM based on the schema of the listing model.
+    The system message instructs the model to extract and format data into JSON.
     """
-    # Use the model_json_schema() method to introspect the Pydantic model
+    # Extract the model's JSON schema
     schema_info = listing_model.model_json_schema()
 
-    # Extract field descriptions from the schema
+    # Build descriptions for each field in the schema
     field_descriptions = []
     for field_name, field_info in schema_info["properties"].items():
         # Get the field type from the schema info
@@ -231,16 +259,16 @@ def format_data(data, DynamicListingsContainer, DynamicListingModel, selected_mo
     if selected_model == "Llama3.1 8B":
 
         # Dynamically generate the system message based on the schema
-        sys_message = generate_system_message(DynamicListingModel)
+        sys_message = system_message(DynamicListingModel)
         # print(SYSTEM_MESSAGE)
         # Point to the local server
         client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
         completion = client.chat.completions.create(
-            model=LLAMA_MODEL_FULLNAME, #change this if needed (use a better model)
+            model=LLAMA_FULL_MODEL_NAME, #change this if needed (use a better model)
             messages=[
                 {"role": "system", "content": sys_message},
-                {"role": "user", "content": USER_MESSAGE + data}
+                {"role": "user", "content": AI_EXTRACTION_USER_PROMPT + data}
             ],
             temperature=0.7,
             
@@ -262,7 +290,7 @@ def format_data(data, DynamicListingsContainer, DynamicListingModel, selected_mo
     elif selected_model== "Groq Llama3.1 70b":
         
         # Dynamically generate the system message based on the schema
-        sys_message = generate_system_message(DynamicListingModel)
+        sys_message = system_message(DynamicListingModel)
         # print(SYSTEM_MESSAGE)
         # Point to the local server
         client = Groq(api_key=os.environ.get("GROQ_API_KEY"),)
@@ -270,9 +298,9 @@ def format_data(data, DynamicListingsContainer, DynamicListingModel, selected_mo
         completion = client.chat.completions.create(
         messages=[
             {"role": "system","content": sys_message},
-            {"role": "user","content": USER_MESSAGE + data}
+            {"role": "user","content": AI_EXTRACTION_USER_PROMPT + data}
         ],
-        model=GROQ_LLAMA_MODEL_FULLNAME,
+        model=GROQ_LLAMA_FULL_MODEL_NAME,
     )
 
         # Extract the content from the response
@@ -342,8 +370,8 @@ def calculate_price(token_counts, model):
     output_token_count = token_counts.get("output_tokens", 0)
     
     # Calculate the costs
-    input_cost = input_token_count * PRICING[model]["input"]
-    output_cost = output_token_count * PRICING[model]["output"]
+    input_cost = input_token_count * MODEL_PRICING[model]["input"]
+    output_cost = output_token_count * MODEL_PRICING[model]["output"]
     total_cost = input_cost + output_cost
     
     return input_token_count, output_token_count, total_cost
@@ -355,7 +383,7 @@ def generate_unique_folder_name(url):
     return f"{url_name}_{timestamp}"
 
 
-def scrape_multiple_urls(urls, fields, selected_model):
+def scrape_urls_list(urls, fields, selected_model):
     # Use the URLs from data_source.py
     urls = URLS
 
@@ -368,11 +396,11 @@ def scrape_multiple_urls(urls, fields, selected_model):
     total_output_tokens = 0
     total_cost = 0
     all_data = []
-    markdown = None  # We'll store the markdown for the first (or only) URL
+    markdown = None  # store the markdown for the first (or only) URL
     
     for i, url in enumerate(urls, start=1):
         raw_html = fetch_html_selenium(url)
-        current_markdown = html_to_markdown_with_readability(raw_html)
+        current_markdown = html_to_markdown(raw_html)
         if i == 1:
             markdown = current_markdown  # Store markdown for the first URL
         
@@ -391,10 +419,10 @@ def scrape_url(url: str, fields: List[str], selected_model: str, output_folder: 
         save_raw_data(markdown, output_folder, f'rawData_{file_number}.md')
 
         # Create the dynamic listing model
-        DynamicListingModel = create_dynamic_listing_model(fields)
+        DynamicListingModel = dynamic_listing_model(fields)
 
         # Create the container model that holds a list of the dynamic listing models
-        DynamicListingsContainer = create_listings_container_model(DynamicListingModel)
+        DynamicListingsContainer = listings_container_model(DynamicListingModel)
         
         # Format data
         formatted_data, token_counts = format_data(markdown, DynamicListingsContainer, DynamicListingModel, selected_model)

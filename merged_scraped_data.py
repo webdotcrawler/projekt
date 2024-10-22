@@ -13,6 +13,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 from jina import Document, DocumentArray, Flow
 from docarray import Document, DocumentArray
 
+
+#test for fork issue
+#import multiprocessing
+#multiprocessing.set_start_method('spawn')
+
+
+
+
 # Load environment variables
 load_dotenv()
 
@@ -280,7 +288,7 @@ def main(folder_path, output_filename):
         combined_data = clean_and_standardize(combined_data)
         
         # Extract column samples for LLM
-        column_samples = {col: combined_data[col].head(3).tolist() for col in combined_data.columns}
+        column_samples = {col: combined_data[col].head(10).tolist() for col in combined_data.columns}
         data_sample = json.dumps(column_samples)
         
         # Unify columns
@@ -292,13 +300,30 @@ def main(folder_path, output_filename):
         print(f"Combined data columns after unification: {combined_data.columns.tolist()}")
         
         # Save to xlsx
-        output_path = os.path.join(folder_path, output_filename)
+        # needed for manually inputting the path
+        #output_path = os.path.join(folder_path, output_filename)
+        output_path = output_filename
         save_to_xlsx(combined_data, output_path)
     else:
         print("No valid JSON data found.")
 
+
+# for manually inputing the folder path and filename
+"""
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("Usage: python merged_scraped_data.py <folder_path> <output_filename>")
     else:
         main(sys.argv[1], sys.argv[2])
+"""
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python merged_scraped_data.py <folder_path>")
+        sys.exit(1)
+
+    folder_path = sys.argv[1]
+    output_file = os.path.join(folder_path, "merged_data.xlsx")
+    
+    main(folder_path, output_file)
+
