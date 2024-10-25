@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project is a universal web scraping tool designed to extract and structure data from any website, dynamically adjusting to the data structure without hardcoded parameters. The scraper uses **Selenium** and **BeautifulSoup** for web interaction and HTML parsing, while the **Groq LLM** models handle data alignment and unification. The data is output in **JSON** and **Excel** formats for easy analysis.
+This project is a versatile web scraping tool designed to extract and structure data from any website, dynamically adjusting to the data structure without hardcoded parameters. The scraper uses **Selenium** and **BeautifulSoup** for web interaction and HTML parsing, while the **Groq LLM** models handle data alignment and unification. The data is output in **JSON** and **Excel** formats for easy analysis.
 
 ### Key Features:
 - **Flexible Scraping**: No hardcoded fields. Adapts to any website’s structure.
@@ -48,7 +48,6 @@ cd your-repo-name
 
 ## 2. Install Dependencies
 
-Ensure Python 3.8+ is installed, then:
 
 pip install -r requirements.txt
 
