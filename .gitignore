@@ -43,3 +43,4 @@ Thumbs.db
 
 # Ignore files
 data_source.py
+chromedriver
