@@ -1,4 +1,4 @@
-# Universal Web Scraper with Dynamic Data Structuring
+# Web Scraper with Dynamic Data Structuring
 
 ## Overview
 
