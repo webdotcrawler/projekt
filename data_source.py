@@ -13,3 +13,7 @@ URLS = [
     #"https://worldsummit.ai/all-events/",
     #"https://platform.slush.org/public/slush24/activities/browse",
     #"https://www.ces.tech/events/"
+
+
+    # test url
+    # "https://scrapeme.live/shop/"

@@ -4,6 +4,7 @@ import pandas as pd
 import json
 import time
 import re
+import logging
 from groq import Groq
 from dotenv import load_dotenv
 from cachetools import TTLCache
@@ -11,14 +12,18 @@ from difflib import SequenceMatcher
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from jina import Document, DocumentArray, Flow
-from docarray import Document, DocumentArray
+import warnings
 
 
-#test for fork issue
-#import multiprocessing
-#multiprocessing.set_start_method('spawn')
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
+# Configure logging
+logging.basicConfig(
+    filename='data_processing.log',  # Log file name
+    level=logging.DEBUG,  # Log level
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 
 # Load environment variables
@@ -46,6 +51,7 @@ RATE_LIMITS = {
 # Initialize the Flow for Jina
 flow = Flow().add(uses='jinahub+docker://TransformerTorchEncoder')
 
+
 # Fetch column embeddings using Jina
 def get_column_embeddings(columns):
     with flow:
@@ -61,10 +67,10 @@ def handle_rate_limit_error(error_message):
     wait_time_match = re.search(r"Please try again in ([\d\.]+)s", error_message)
     if wait_time_match:
         wait_seconds = float(wait_time_match.group(1))
-        print(f"Rate limit reached. Waiting for {wait_seconds} seconds...")
+        logging.warning(f"Rate limit reached. Waiting for {wait_seconds} seconds...")
         return wait_seconds
     else:
-        print("Failed to parse wait time from error. Using exponential backoff.")
+        logging.warning("Failed to parse wait time from error. Using exponential backoff.")
         return None
 
 # Extract JSON from LLM response
@@ -73,7 +79,7 @@ def extract_json(response_content):
     if json_match:
         return json_match.group(1).strip()
     
-    print("No valid JSON found in the response.")
+    logging.error("No valid JSON found in the response.")
     return None
 
 # LLM request with backoff
@@ -87,19 +93,19 @@ def request_with_backoff(client, messages):
 
     if tokens_in_current_minute + token_count > RATE_LIMITS["tokens_per_minute"]:
         time_to_wait = 60
-        print(f"Token limit reached. Waiting {time_to_wait} seconds...")
+        logging.info(f"Token limit reached. Waiting {time_to_wait} seconds...")
         time.sleep(time_to_wait)
         tokens_in_current_minute = 0
 
     if tokens_in_current_day + token_count > RATE_LIMITS["tokens_per_day"]:
-        print("Daily token limit exceeded. Try again tomorrow.")
+        logging.error("Daily token limit exceeded. Try again tomorrow.")
         return None
 
     while retry_count < max_retries:
         try:
             if requests_in_current_minute >= RATE_LIMITS["requests_per_minute"]:
                 time_to_wait = 180
-                print(f"Request limit reached. Waiting {time_to_wait} seconds...")
+                logging.info(f"Request limit reached. Waiting {time_to_wait} seconds...")
                 time.sleep(time_to_wait)
                 requests_in_current_minute = 0
 
@@ -115,19 +121,19 @@ def request_with_backoff(client, messages):
 
             # Process LLM response
             response_content = completion.choices[0].message.content
-            print("LLM response content:", response_content)
+            logging.debug("LLM response content: %s", response_content)
 
             json_response = extract_json(response_content)
             if json_response:
                 return json.loads(json_response)
 
-            print("No valid JSON found in the response. Retrying...")
+            logging.warning("No valid JSON found in the response. Retrying...")
             retry_count += 1
             time.sleep(wait_time)
             wait_time *= 2
 
         except Exception as e:
-            print(f"Request failed: {e}")
+            logging.error(f"Request failed: {e}")
             if "rate_limit_exceeded" in str(e):
                 wait_seconds = handle_rate_limit_error(str(e))
                 if wait_seconds:
@@ -138,15 +144,15 @@ def request_with_backoff(client, messages):
                     wait_time *= 2
                     retry_count += 1
             elif "503" in str(e):
-                print("Service Unavailable (503). Retrying...")
+                logging.info("Service Unavailable (503). Retrying...")
                 time.sleep(wait_time)
                 wait_time *= 2
                 retry_count += 1
             else:
-                print("Non-rate-limit error occurred. Exiting retry loop.")
+                logging.error("Non-rate-limit error occurred. Exiting retry loop.")
                 break
 
-    print("Max retries reached. Exiting.")
+    logging.error("Max retries reached. Exiting.")
     return None
 
 # Flatten listings from JSON
@@ -158,10 +164,14 @@ def flatten_listings(data):
                 for listing in entry['listings']:
                     flattened_data.append(listing)
             else:
-                print(f"Warning: 'listings' is not a list in {entry}.")
+                logging.warning(f"'listings' is not a list in {entry}.")
         else:
-            print(f"Warning: 'listings' key not found in {entry}.")
+            logging.warning(f"'listings' key not found in {entry}.")
     return flattened_data
+
+
+
+
 
 # Fetch column mappings from LLM
 def fetch_columns_from_llm(data_sample):
@@ -188,6 +198,8 @@ def fetch_columns_from_llm(data_sample):
     print(f"Unexpected LLM response format: {unified_columns_response}")
     return {}
 
+
+
 # String similarity function
 def similar(a, b):
     return SequenceMatcher(None, a, b).ratio()
@@ -198,7 +210,35 @@ def get_embedding_similarity(a, b):
     return cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
 
 
-# Column unification logic using Jina
+# Filter similar columns using Jina and cosine similarity
+def filter_similar_columns(columns, threshold=0.8):
+    """
+    Use Jina to fetch embeddings and filter out dissimilar columns based on cosine similarity.
+    """
+    column_embeddings = get_column_embeddings(columns)
+    filtered_columns = []
+
+    for i, col_a in enumerate(columns):
+        for j, col_b in enumerate(columns):
+            if i != j:
+                similarity = get_embedding_similarity(col_a, col_b)
+                if similarity > threshold:
+                    logging.info(f"Columns '{col_a}' and '{col_b}' are similar with a score of {similarity}.")
+                    filtered_columns.append((col_a, col_b))
+
+
+    # Log the similarities calculated to gain insight into what pairs are being compared and why some might be missed.
+    logging.debug(f"Comparing columns '{col_a}' and '{col_b}' with similarity: {similarity}")
+
+
+    return filtered_columns
+
+
+
+
+
+
+
 def unify_columns(data):
     """
     Use Jina to get embeddings for columns and suggest unified column names.
@@ -234,19 +274,24 @@ def unify_columns(data):
             data.drop(columns=old_cols, errors='ignore', inplace=True)
 
     return data
+    
+
 
 # Data cleaning and standardization
 def clean_and_standardize(data):
     if 'price' in data.columns:
         data['price'] = data['price'].replace({'$': '', '£': '', '€': ''}, regex=True).astype(float)
-        data['price'] = data['price'].apply(lambda x: f"${x:.2f}")
+        data['price'] = data['price'].apply(lambda x: f"€{x:.2f}")
     
     for url_field in ['image_url', 'product_url']:
         if url_field in data.columns:
             data[url_field] = data[url_field].str.strip()
             data[url_field] = data[url_field].replace(r'http://', 'https://', regex=True)
+
     
     return data
+
+
 
 # Combine JSON files into one DataFrame
 def combine_json_files_first_pass(folder_path):
@@ -258,7 +303,7 @@ def combine_json_files_first_pass(folder_path):
             try:
                 data = json.load(f)
                 if not data:
-                    print(f"Warning: JSON file {json_file} is empty or not properly structured.")
+                    logging.warning(f"Warning: JSON file {json_file} is empty or not properly structured.")
                 else:
                     all_data.append(data)
             except json.JSONDecodeError as e:
@@ -266,11 +311,11 @@ def combine_json_files_first_pass(folder_path):
 
     if all_data:
         flattened_data = pd.json_normalize(flatten_listings(all_data))
-        print(f"Combined data preview:\n{flattened_data.head()}\n")
-        print(f"Combined data columns: {flattened_data.columns.tolist()}\n")  # Check columns
+        logging.info(f"Combined data preview:\n{flattened_data.head(25)}\n")
+        logging.info(f"Combined data columns: {flattened_data.columns.tolist()}\n")  # Check columns
         return flattened_data
     else:
-        print("No valid JSON data found.")
+        logging.warning("No valid JSON data found.")
         return pd.DataFrame()  # Return empty DataFrame if no valid data found
 
 # Save combined data to xlsx
@@ -282,7 +327,7 @@ def main(folder_path, output_filename):
     combined_data = combine_json_files_first_pass(folder_path)
     
     if combined_data is not None and not combined_data.empty:
-        print(f"Combined data columns before unification: {combined_data.columns.tolist()}")
+        logging.info(f"Combined data columns before unification: {combined_data.columns.tolist()}")
         
         # Clean and standardize data
         combined_data = clean_and_standardize(combined_data)
@@ -291,35 +336,27 @@ def main(folder_path, output_filename):
         column_samples = {col: combined_data[col].head(10).tolist() for col in combined_data.columns}
         data_sample = json.dumps(column_samples)
         
+
+        
         # Unify columns
         unified_columns_map = fetch_columns_from_llm(data_sample)
         if unified_columns_map:
-            print(f"Unified columns mapping received: {unified_columns_map}")
+            logging.info(f"Unified columns mapping received: {unified_columns_map}")
             combined_data = unify_columns(combined_data)
         
-        print(f"Combined data columns after unification: {combined_data.columns.tolist()}")
+        logging.info(f"Combined data columns after unification: {combined_data.columns.tolist()}")
         
+
         # Save to xlsx
-        # needed for manually inputting the path
-        #output_path = os.path.join(folder_path, output_filename)
         output_path = output_filename
         save_to_xlsx(combined_data, output_path)
     else:
-        print("No valid JSON data found.")
+        logging.warning("No valid JSON data found.")
 
-
-# for manually inputing the folder path and filename
-"""
-if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python merged_scraped_data.py <folder_path> <output_filename>")
-    else:
-        main(sys.argv[1], sys.argv[2])
-"""
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python merged_scraped_data.py <folder_path>")
+        logging.info("Usage: python merged_scraped_data.py <folder_path>")
         sys.exit(1)
 
     folder_path = sys.argv[1]

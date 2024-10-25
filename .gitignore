@@ -20,6 +20,7 @@ __pycache__/
 output/
 data/
 logs/
+*.log
 
 # Ignore IDE and editor files
 .vscode/

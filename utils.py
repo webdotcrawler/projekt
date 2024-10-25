@@ -99,11 +99,6 @@ MODEL_PRICING = {
 GROQ_LLAMA_FULL_MODEL_NAME = "llama-3.1-70b-versatile"
 
 
-# Timeout settings for web scraping
-SCRAPER_TIMEOUTS = {
-    "page_load": 30,
-    "script": 10
-}
             
 # Other reusable constants or configuration settings
 CHROME_HEADLESS_OPTIONS = [
@@ -116,8 +111,6 @@ CHROME_HEADLESS_OPTIONS = [
 #in case you don't need to open the website
 ##HEADLESS_OPTIONS=HEADLESS_OPTIONS+[ "--headless=new"]
 
-#number of scrolls to mimic human behaviour
-WEBPAGE_SCROLL_ACTIONS=2
 
 
 LLAMA_FULL_MODEL_NAME="lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF"
